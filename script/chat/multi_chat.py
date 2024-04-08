@@ -15,7 +15,7 @@ def main():
     temperature = 0.35
     repetition_penalty = 1.0
 
-    # 加载模型
+    # 加载transformers模型
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         trust_remote_code=True,
@@ -23,12 +23,15 @@ def main():
         torch_dtype=torch.float16,
         device_map='auto'
     ).to(device).eval()
+
+    # 加载transformers token
     tokenizer = AutoTokenizer.from_pretrained(
         model_name,
         trust_remote_code=True,
         # llama不支持fast
         use_fast=False if model.config.model_type == 'llama' else True
     )
+
     # QWenTokenizer比较特殊，pad_token_id、bos_token_id、eos_token_id均为None。eod_id对应的token为<|endoftext|>
     if tokenizer.__class__.__name__ == 'QWenTokenizer':
         tokenizer.pad_token_id = tokenizer.eod_id
@@ -36,8 +39,10 @@ def main():
         tokenizer.eos_token_id = tokenizer.eod_id
 
     # 记录所有历史记录
+    # 非chatglm模型
     if model.config.model_type != 'chatglm':
         history_token_ids = torch.tensor([[tokenizer.bos_token_id]], dtype=torch.long)
+    # chatglm模型
     else:
         history_token_ids = torch.tensor([[]], dtype=torch.long)
 
@@ -46,23 +51,45 @@ def main():
     user_input = input('User：')
     while True:
         utterance_id += 1
-        # chatglm使用官方的数据组织格式
+
+        # -------chatglm使用官方的数据组织格式------
         if model.config.model_type == 'chatglm':
+            # [Round 1]
+            # 问：你好
+            # 答：
             user_input = '[Round {}]\n\n问：{}\n\n答：'.format(utterance_id, user_input)
+            # 将输入进行tokenizer
             user_input_ids = tokenizer(user_input, return_tensors="pt", add_special_tokens=False).input_ids
-        # firefly的数据组织格式
+
+        # -------firefly的数据组织格式-------
         # 为了兼容qwen-7b，因为其对eos_token进行tokenize，无法得到对应的eos_token_id
         else:
+            # 直接对输入进行tokenizer
             input_ids = tokenizer(user_input, return_tensors="pt", add_special_tokens=False).input_ids
+            # eos_token_id
             eos_token_id = torch.tensor([[tokenizer.eos_token_id]], dtype=torch.long)
+            # 输入id: input_ids + eos_token_id
             user_input_ids = torch.concat([input_ids, eos_token_id], dim=1)
+        # 历史数据进行更新
         history_token_ids = torch.concat((history_token_ids, user_input_ids), dim=1)
+        # 截取一定量的历史数据
         model_input_ids = history_token_ids[:, -history_max_len:].to(device)
+
+
+
+        # 进行推理
         with torch.no_grad():
+            # 开始微调生成
             outputs = model.generate(
-                input_ids=model_input_ids, max_new_tokens=max_new_tokens, do_sample=True, top_p=top_p,
-                temperature=temperature, repetition_penalty=repetition_penalty, eos_token_id=tokenizer.eos_token_id
-            )
+                                    input_ids=model_input_ids,
+                                    max_new_tokens=max_new_tokens,  # 每轮对话最多生成多少个token
+                                    do_sample=True,
+                                    top_p=top_p,
+                                    temperature=temperature,  # 随机度
+                                    repetition_penalty=repetition_penalty,
+                                    eos_token_id=tokenizer.eos_token_id
+                                    )
+        # 输入长度
         model_input_ids_len = model_input_ids.size(1)
         response_ids = outputs[:, model_input_ids_len:]
         history_token_ids = torch.concat((history_token_ids, response_ids.cpu()), dim=1)

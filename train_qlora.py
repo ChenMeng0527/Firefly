@@ -75,6 +75,7 @@ def find_all_linear_names(model):
 
 
 def setup_everything():
+    #
     parser = argparse.ArgumentParser()
     parser.add_argument("--train_args_file", type=str, default='train_args/baichuan-sft-qlora.json', help="")
     args = parser.parse_args()
@@ -109,32 +110,34 @@ def init_components(args, training_args):
         device_map = {'': local_rank}
     # 加载模型
     model = AutoModelForCausalLM.from_pretrained(
-        args.model_name_or_path,
-        device_map=device_map,
-        load_in_4bit=True,
-        torch_dtype=torch.float16,
-        trust_remote_code=True,
-        quantization_config=BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.float16,
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4",
-            llm_int8_threshold=6.0,
-            llm_int8_has_fp16_weight=False,
-        ),
-    )
+                                                args.model_name_or_path,
+                                                device_map=device_map,
+                                                load_in_4bit=True,
+                                                torch_dtype=torch.float16,
+                                                trust_remote_code=True,
+                                                quantization_config=BitsAndBytesConfig(
+                                                    load_in_4bit=True,
+                                                    bnb_4bit_compute_dtype=torch.float16,
+                                                    bnb_4bit_use_double_quant=True,
+                                                    bnb_4bit_quant_type="nf4",
+                                                    llm_int8_threshold=6.0,
+                                                    llm_int8_has_fp16_weight=False,
+                                                ),
+                                            )
     # 加载tokenzier
     tokenizer = AutoTokenizer.from_pretrained(
-        args.model_name_or_path,
-        trust_remote_code=True,
-        # llama不支持fast
-        use_fast=False if model.config.model_type == 'llama' else True
-    )
+                                            args.model_name_or_path,
+                                            trust_remote_code=True,
+                                            # llama不支持fast
+                                            use_fast=False if model.config.model_type == 'llama' else True
+                                        )
+
     # QWenTokenizer比较特殊，pad_token_id、bos_token_id、eos_token_id均为None。eod_id对应的token为<|endoftext|>
     if tokenizer.__class__.__name__ == 'QWenTokenizer':
         tokenizer.pad_token_id = tokenizer.eod_id
         tokenizer.bos_token_id = tokenizer.eod_id
         tokenizer.eos_token_id = tokenizer.eod_id
+
     # ChatGLMTokenizer不需要设置，仅设置其他tokenizer
     elif tokenizer.__class__.__name__ != 'ChatGLMTokenizer':
         assert tokenizer.eos_token_id is not None
@@ -154,18 +157,22 @@ def init_components(args, training_args):
     # casts all the non int8 modules to full precision (fp32) for stability
     model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=training_args.gradient_checkpointing)
     print(f'memory footprint of model: {model.get_memory_footprint()/(1024*1024*1024)} GB')
+
     # 找到所有需要插入adapter的全连接层
     target_modules = find_all_linear_names(model)
+
     # 初始化lora配置
     config = LoraConfig(
-        r=args.lora_rank,
-        lora_alpha=args.lora_alpha,
-        target_modules=target_modules,
-        lora_dropout=args.lora_dropout,
-        bias="none",
-        task_type="CAUSAL_LM",
-    )
+                        r=args.lora_rank,
+                        lora_alpha=args.lora_alpha,
+                        target_modules=target_modules,
+                        lora_dropout=args.lora_dropout,
+                        bias="none",
+                        task_type="CAUSAL_LM",
+                        )
+    # 得到peft模型
     model = get_peft_model(model, config)
+    # 打印可训练参数
     model.print_trainable_parameters()
     model.config.torch_dtype = torch.float32
 
@@ -177,20 +184,22 @@ def init_components(args, training_args):
 
     # 指加载训练集
     if model.config.model_type == 'chatglm':
+        # chatglm数据
         train_dataset = ChatGLM2SFTDataset(args.train_file, tokenizer, args.max_seq_length)
     else:
+        # SFT数据
         train_dataset = SFTDataset(args.train_file, tokenizer, args.max_seq_length)
     data_collator = SFTDataCollator(tokenizer, args.max_seq_length)
 
     # 初始化Trainer
     trainer = LoRATrainer(
-        model=model,
-        args=training_args,
-        train_dataset=train_dataset,
-        # tokenizer=tokenizer,
-        data_collator=data_collator,
-        compute_loss=loss_func
-    )
+                        model=model,  # peft
+                        args=training_args,
+                        train_dataset=train_dataset,  # 数据集
+                        # tokenizer=tokenizer,
+                        data_collator=data_collator,  # 处理数据的collator
+                        compute_loss=loss_func  # loss
+                        )
     return trainer
 
 

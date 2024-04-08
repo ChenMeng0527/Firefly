@@ -18,20 +18,29 @@ from component.loss import TargetLMLoss
 
 
 def setup_everything():
+    '''
+    配置信息
+    '''
+
+    # train_args_file参数
     parser = argparse.ArgumentParser()
     parser.add_argument("--train_args_file", type=str, default='train_args/sft.json', help="")
     args = parser.parse_args()
     train_args_file = args.train_args_file
     # train_args_file = 'train_args/finetune.json'
+
+
     # 读取训练的参数配置
     parser = HfArgumentParser((CustomizedArguments, TrainingArguments))
     # 解析得到自定义参数，以及自带参数
     args, training_args = parser.parse_json_file(json_file=train_args_file)
+
     # 创建输出目录
     if not os.path.exists(training_args.output_dir):
         os.makedirs(training_args.output_dir)
     logger.add(join(training_args.output_dir, 'train.log'))
     logger.info("train_args:{}".format(training_args))
+
     # 设置随机种子
     set_seed(training_args.seed)
     return args, training_args
@@ -50,17 +59,17 @@ def init_components(args, training_args):
 
     # 初始化model
     model = AutoModelForCausalLM.from_pretrained(
-        args.model_name_or_path,
-        torch_dtype=torch.float16,
-        trust_remote_code=True
-    )
+                                                 args.model_name_or_path,
+                                                 torch_dtype=torch.float16,
+                                                 trust_remote_code=True
+                                                )
     # 加载tokenzier
     tokenizer = AutoTokenizer.from_pretrained(
-        args.model_name_or_path,
-        trust_remote_code=True,
-        # llama不支持fast
-        use_fast=False if model.config.model_type == 'llama' else True
-    )
+                                              args.model_name_or_path,
+                                              trust_remote_code=True,
+                                              # llama不支持fast
+                                              use_fast=False if model.config.model_type == 'llama' else True
+                                             )
     # QWenTokenizer比较特殊，pad_token_id、bos_token_id、eos_token_id均为None。eod_id对应的token为<|endoftext|>
     if tokenizer.__class__.__name__ == 'QWenTokenizer':
         tokenizer.pad_token_id = tokenizer.eod_id
@@ -97,19 +106,20 @@ def init_components(args, training_args):
 
     # 初始化Trainer
     trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=train_dataset,
-        # tokenizer=tokenizer,
-        data_collator=data_collator,
-        compute_loss=loss_func
-    )
+                    model=model,
+                    args=training_args,
+                    train_dataset=train_dataset,
+                    # tokenizer=tokenizer,
+                    data_collator=data_collator,
+                    compute_loss=loss_func
+                    )
     return trainer
 
 
 def main():
     # 进行一些配置和检查
     args, training_args = setup_everything()
+
     # 加载各种组件
     trainer = init_components(args, training_args)
     # 开始训练
