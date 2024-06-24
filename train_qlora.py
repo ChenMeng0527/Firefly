@@ -75,20 +75,30 @@ def find_all_linear_names(model):
 
 
 def setup_everything():
-    #
+    '''
+    命令行输入lora.json配置的地址
+    返回 QLoRA+Training的参数
+    '''
+    # 创建一个命令行解析器对象
     parser = argparse.ArgumentParser()
+    # 增加lora json配置
     parser.add_argument("--train_args_file", type=str, default='train_args/baichuan-sft-qlora.json', help="")
     args = parser.parse_args()
+    # 训练文件
     train_args_file = args.train_args_file
+
     # 读取训练的参数配置
     parser = HfArgumentParser((QLoRAArguments, TrainingArguments))
     # 解析得到自定义参数，以及自带参数
     args, training_args = parser.parse_json_file(json_file=train_args_file)
+
     # 创建输出目录
     if not os.path.exists(training_args.output_dir):
         os.makedirs(training_args.output_dir)
-    # logger.add(join(training_args.output_dir, 'train.log'))
-    # logger.info("train_args:{}".format(training_args))
+
+    logger.add(join(training_args.output_dir, 'train.log'))
+    logger.info("train_args:{}".format(training_args))
+
     # 设置随机种子
     set_seed(training_args.seed)
     return args, training_args
@@ -96,7 +106,8 @@ def setup_everything():
 
 def init_components(args, training_args):
     """
-    初始化各个组件
+    输入QLoRA+Training的参数
+    加载模型，返回train
     """
     logger.info('Initializing components...')
     # 下面的设置至关重要，否则无法多卡训练
@@ -163,10 +174,10 @@ def init_components(args, training_args):
 
     # 初始化lora配置
     config = LoraConfig(
-                        r=args.lora_rank,
-                        lora_alpha=args.lora_alpha,
-                        target_modules=target_modules,
-                        lora_dropout=args.lora_dropout,
+                        r=args.lora_rank,  # lora参数1
+                        lora_alpha=args.lora_alpha,  # lora参数1
+                        target_modules=target_modules,  # 需要lora的模块
+                        lora_dropout=args.lora_dropout,  # dropout
                         bias="none",
                         task_type="CAUSAL_LM",
                         )
@@ -204,16 +215,20 @@ def init_components(args, training_args):
 
 
 def main():
-    # 进行一些配置和检查
+    # 命令行输入lora.json配置的地址，返回 QLoRA+Training的参数
     args, training_args = setup_everything()
-    # 加载各种组件
+
+    # 加载各种组件，返回trainer
     trainer = init_components(args, training_args)
+
     # 开始训练
     logger.info("*** starting training ***")
     train_result = trainer.train()
-    # 保存最好的checkpoint
+
+    # 保存最好的checkpoint(lora权重)
     final_save_path = join(training_args.output_dir, 'final')
     trainer.save_model(final_save_path)  # Saves the tokenizer too
+
     # 保存训练指标
     metrics = train_result.metrics
     trainer.log_metrics("train", metrics)

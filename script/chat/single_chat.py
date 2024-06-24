@@ -14,6 +14,7 @@ def main():
     # model_name = 'YeungNLP/firefly-baichuan-13b'
     # model_name = 'YeungNLP/firefly-bloom-7b1'
     # model_name = 'YeungNLP/firefly-llama-30b'
+    model_name = '/home/hadoop/Firefly/out_meger_model/lora_model/youshu-baichuan-13b-qa_qlora-sft-merge'
 
     # 最大长度
     max_new_tokens = 500
@@ -27,11 +28,18 @@ def main():
     device = 'cuda'
 
     # ---加载模型---
+    print('----xxxxxxxx-----'*10)
     model = AutoModelForCausalLM.from_pretrained(model_name,
+                                                 # 注意加载离线出来的参数
+                                                 # offload_folder='/home/hadoop/Firefly/out_meger_model/offload_w',
+                                                 offload_folder='/home/hadoop/Firefly/script/offload',
+                                                 offload_state_dict=True,
                                                  trust_remote_code=True,
                                                  low_cpu_mem_usage=True,
                                                  torch_dtype=torch.float16,
                                                  device_map='auto').to(device).eval()
+    # model.float()  # 加载离线出来的参数需要这一行
+    print('---*----*----'*10)
     # ---加载token---
     tokenizer = AutoTokenizer.from_pretrained(model_name,
                                               trust_remote_code=True,

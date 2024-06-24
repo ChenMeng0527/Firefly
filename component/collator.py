@@ -5,13 +5,27 @@ import torch
 class SFTDataCollator(object):
     '''
     将batch中的input_ids/attention_mask/target_mask进行处理
+
+    --输入batch
+    输入: [{'input_ids':[],'attention_mask':[],'target_mask':[]},
+              {},
+              {}]
+    --处理
         1：padding
             input_ids：用pad_token_id进行填充id
             attention_mask：pad补充0
             target_mask：pad补充0
         2：截断
         3：转tensor
+
+    --返回
+        inputs = {
+            'input_ids': input_ids_batch,  # input_ids_batch:[[],[],[],[]]
+            'attention_mask': attention_mask_batch,  # attention_mask_batch:[[],[],[],[]]
+            'target_mask': target_mask_batch  # target_mask_batch:[[],[],[],[]]
+        }
     '''
+
     def __init__(self, tokenizer, max_seq_length):
         # tokenizer
         self.tokenizer = tokenizer
@@ -23,6 +37,9 @@ class SFTDataCollator(object):
 
     def __call__(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:
         '''
+        输入: [{'input_ids':[],'attention_mask':[],'target_mask':[]},
+              {},
+              {}]
         重点：将每条样本中input_ids,attention_mask,target_mask进行处理
         1：padding
             input_ids：用pad_token_id进行填充id
@@ -82,6 +99,9 @@ class SFTDataCollator(object):
         target_mask_batch = torch.tensor(target_mask_batch, dtype=torch.long)
 
         # 模型输入 元素是个list
+        # input_ids_batch:[[],[],[],[]]
+        # attention_mask_batch:[[],[],[],[]]
+        # target_mask_batch:[[],[],[],[]]
         inputs = {
             'input_ids': input_ids_batch,
             'attention_mask': attention_mask_batch,
